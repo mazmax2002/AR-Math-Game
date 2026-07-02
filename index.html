@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Math AR Game - ภารกิจคณิตศาสตร์ทะลุมิติ</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Kanit -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800;900&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- Tone.js for Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+    <style>
+        :root {
+            --dark-border: #111827;
+        }
+
+        body {
+            font-family: 'Kanit', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #93c5fd; /* Light blue */
+            background-image: radial-gradient(#60a5fa 3px, transparent 3px);
+            background-size: 30px 30px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Comic Text Styles */
+        .text-outline-white {
+            color: white;
+            text-shadow: 
+                -3px -3px 0 var(--dark-border),  
+                 3px -3px 0 var(--dark-border),
+                -3px  3px 0 var(--dark-border),
+                 3px  3px 0 var(--dark-border),
+                 0px  6px 0 var(--dark-border); /* 3D bottom drop */
+        }
+        .text-outline-yellow {
+            color: #fde047;
+            text-shadow: 
+                -4px -4px 0 var(--dark-border),  
+                 4px -4px 0 var(--dark-border),
+                -4px  4px 0 var(--dark-border),
+                 4px  4px 0 var(--dark-border),
+                 0px  8px 0 var(--dark-border);
+        }
+
+        /* Chunky UI Elements (Neu-Brutalism) */
+        .chunky-box {
+            background-color: white;
+            border: 4px solid var(--dark-border);
+            border-radius: 2rem;
+            box-shadow: 8px 8px 0px 0px var(--dark-border);
+        }
+
+        /* Chunky Buttons */
+        .btn-game {
+            border: 4px solid var(--dark-border);
+            box-shadow: 0 8px 0px 0px var(--dark-border);
+            transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            top: 0;
+        }
+        .btn-game:active {
+            top: 8px;
+            box-shadow: 0 0px 0px 0px var(--dark-border);
+        }
+        
+        /* Specific Button Colors */
+        .btn-add { background-color: #60a5fa; color: white; }
+        .btn-sub { background-color: #f87171; color: white; }
+        .btn-mul { background-color: #4ade80; color: white; }
+        .btn-div { background-color: #fbbf24; color: white; }
+        .btn-mixed { background-color: #a78bfa; color: white; }
+
+        /* Answer Bubbles */
+        .answer-box {
+            border: 6px solid var(--dark-border);
+            box-shadow: 6px 8px 0px 0px var(--dark-border);
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .ans-bg-1 { background-color: #fde047; } /* Yellow */
+        .ans-bg-2 { background-color: #f472b6; } /* Pink */
+
+        @keyframes wiggle {
+            0%, 100% { transform: rotate(-4deg) scale(1.1); }
+            50% { transform: rotate(4deg) scale(1.1); }
+        }
+        .answer-box.hovering {
+            animation: wiggle 0.15s infinite;
+            background-color: #4ade80; /* Turn green when targeting */
+            box-shadow: 0 0 0 6px white, 8px 10px 0px 6px var(--dark-border);
+            z-index: 30;
+        }
+
+        /* Floating Animation */
+        @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-slow {
+            animation: bounce-slow 3s ease-in-out infinite;
+        }
+
+        /* Video Layer */
+        #game-bg-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 1;
+            background-color: #111827;
+        }
+        #video-canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            opacity: 0.85; /* Darken slightly to make UI pop */
+        }
+        
+        #cursor-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Confetti */
+        .confetti-piece { position: absolute; width: 15px; height: 15px; border: 2px solid #000; opacity: 0; }
+        @keyframes fall {
+            0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="w-screen h-screen">
+
+    <!-- Screen: Main Menu -->
+    <div id="screen-menu" class="absolute inset-0 flex flex-col items-center justify-center p-6 z-50 overflow-hidden">
+        <div class="chunky-box p-8 md:p-12 text-center max-w-4xl w-full animate-bounce-slow relative z-10 bg-white">
+            <h1 class="text-6xl md:text-8xl font-black text-outline-yellow mb-2 tracking-wide transform -rotate-2">
+                MATH AR!
+            </h1>
+            <p class="text-2xl text-gray-800 mb-8 font-extrabold border-b-4 border-dashed border-gray-300 pb-4 inline-block">
+                ✨ ใช้มือวิเศษ เลือกคำตอบที่ใช่! ✨
+            </p>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 px-4">
+                <button onclick="startGame('add')" class="btn-game btn-add text-3xl font-black py-6 rounded-2xl flex flex-col items-center text-outline-white">
+                    <span class="text-5xl mb-2 drop-shadow-md">➕</span> บวก
+                </button>
+                <button onclick="startGame('sub')" class="btn-game btn-sub text-3xl font-black py-6 rounded-2xl flex flex-col items-center text-outline-white">
+                    <span class="text-5xl mb-2 drop-shadow-md">➖</span> ลบ
+                </button>
+                <button onclick="startGame('mul')" class="btn-game btn-mul text-3xl font-black py-6 rounded-2xl flex flex-col items-center text-outline-white">
+                    <span class="text-5xl mb-2 drop-shadow-md">✖️</span> คูณ
+                </button>
+                <button onclick="startGame('div')" class="btn-game btn-div text-3xl font-black py-6 rounded-2xl flex flex-col items-center text-outline-white">
+                    <span class="text-5xl mb-2 drop-shadow-md">➗</span> หาร
+                </button>
+            </div>
+            
+            <button onclick="startGame('mixed')" class="btn-game btn-mixed w-full max-w-md mx-auto text-3xl font-black py-5 px-8 rounded-full flex items-center justify-center gap-3 text-outline-white">
+                🎲 สุ่มทุกหมวด (Challenge) 🎲
+            </button>
+        </div>
+    </div>
+
+    <!-- Screen: Loading -->
+    <div id="screen-loading" class="hidden absolute inset-0 bg-[#93c5fd] flex flex-col items-center justify-center z-50">
+        <div class="chunky-box p-10 flex flex-col items-center">
+            <div class="relative w-24 h-24 mb-6">
+                <div class="absolute inset-0 border-8 border-gray-800 rounded-full border-t-[#fde047] animate-spin"></div>
+                <div class="absolute inset-0 flex items-center justify-center text-4xl">📸</div>
+            </div>
+            <h2 class="text-4xl font-black text-gray-800 mb-2">เปิดกล้องเวทมนตร์...</h2>
+            <p class="text-xl text-gray-600 font-bold">กดยอมรับ (Allow) กล้องด้วยนะ!</p>
+        </div>
+    </div>
+
+    <!-- Screen: Error -->
+    <div id="screen-error" class="hidden absolute inset-0 bg-red-100 flex flex-col items-center justify-center z-50 p-6">
+        <div class="chunky-box p-10 text-center max-w-lg border-red-500 bg-white">
+            <div class="text-7xl mb-6 animate-bounce">🚫</div>
+            <h2 class="text-4xl font-black text-red-600 mb-4 text-outline-white">อุ๊ปส์! ขัดข้อง</h2>
+            <p class="text-gray-800 text-xl mb-4 font-bold">ไม่สามารถเปิดกล้องได้!</p>
+            
+            <div class="bg-gray-100 p-4 rounded-xl text-left text-sm text-gray-700 mb-8 border-4 border-gray-800 font-medium">
+                <strong>💡 ข้อแนะนำ:</strong><br>
+                อย่าเปิดไฟล์ด้วยการดับเบิ้ลคลิกตรงๆ (file://)<br>
+                ให้รันผ่าน <b>Live Server</b> ใน VS Code หรือนำขึ้นเว็บ เพื่อให้ระบบอนุญาตกล้องครับ
+            </div>
+
+            <button onclick="location.reload()" class="btn-game btn-sub px-8 py-3 rounded-full font-black text-2xl text-outline-white">ลองใหม่อีกครั้ง</button>
+        </div>
+    </div>
+
+    <!-- Screen: Gameplay Layer -->
+    <div id="screen-game" class="hidden absolute inset-0 z-0">
+        
+        <div id="game-bg-layer">
+            <video id="input-video" class="hidden" autoplay playsinline></video>
+            <canvas id="video-canvas"></canvas>
+        </div>
+
+        <canvas id="cursor-layer"></canvas>
+
+        <div id="game-ui-layer" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 md:p-8 z-20">
+            
+            <!-- Top HUD -->
+            <div class="flex justify-between items-start gap-4">
+                <!-- Score & Progress -->
+                <div class="chunky-box px-6 py-3 flex flex-col gap-1 min-w-[150px] bg-white transform -rotate-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">🏆</span>
+                        <span class="text-gray-800 font-black text-2xl">คะแนน: <span id="ui-score" class="text-orange-500">0</span></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">📝</span>
+                        <span class="text-gray-600 font-bold text-xl">ข้อที่: <span id="ui-qcount">1/10</span></span>
+                    </div>
+                </div>
+
+                <!-- Question Board -->
+                <div class="chunky-box px-10 py-6 flex-1 max-w-2xl text-center bg-white animate-bounce-slow">
+                    <h2 id="ui-question" class="text-6xl md:text-8xl font-black text-outline-white text-blue-500">
+                        5 + 5 = ?
+                    </h2>
+                </div>
+
+                <!-- Timer -->
+                <div id="ui-timer-box" class="chunky-box px-6 py-3 flex flex-col items-center justify-center min-w-[120px] bg-white transform rotate-2">
+                    <span class="text-lg text-gray-800 font-black">เวลา</span>
+                    <span id="ui-timer" class="text-5xl font-black text-red-500 text-outline-white">15</span>
+                </div>
+            </div>
+
+            <!-- Answer Buttons -->
+            <div class="flex justify-between items-end pb-10 px-4 md:px-16 h-full">
+                <!-- Left Answer -->
+                <div id="ans-left" class="answer-box ans-bg-1 w-44 h-44 md:w-64 md:h-64 rounded-full flex items-center justify-center cursor-pointer">
+                    <span id="ui-ans-left" class="text-6xl md:text-8xl font-black text-outline-white">10</span>
+                </div>
+                
+                <!-- Right Answer -->
+                <div id="ans-right" class="answer-box ans-bg-2 w-44 h-44 md:w-64 md:h-64 rounded-full flex items-center justify-center cursor-pointer">
+                    <span id="ui-ans-right" class="text-6xl md:text-8xl font-black text-outline-white">12</span>
+                </div>
+            </div>
+
+            <!-- Feedback Overlay -->
+            <div id="ui-feedback" class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150">
+                <div id="ui-feedback-icon" class="text-[15rem] drop-shadow-2xl scale-50 transition-transform duration-300">✅</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen: Game Over / Results -->
+    <div id="screen-result" class="hidden absolute inset-0 bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 p-6">
+        <div id="confetti-container" class="absolute inset-0 overflow-hidden pointer-events-none"></div>
+        
+        <div class="chunky-box p-8 md:p-12 text-center max-w-2xl w-full relative z-10 animate-bounce-slow bg-white">
+            <h1 class="text-6xl md:text-7xl font-black text-outline-yellow mb-6 transform -rotate-2">
+                ยอดเยี่ยมมาก! 🎉
+            </h1>
+            
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="border-4 border-gray-800 p-6 rounded-3xl bg-blue-100 shadow-[4px_4px_0_0_#111827]">
+                    <p class="text-blue-800 font-black text-xl">ตอบถูก</p>
+                    <p class="text-5xl font-black text-blue-600"><span id="res-correct">0</span>/10</p>
+                </div>
+                <div class="border-4 border-gray-800 p-6 rounded-3xl bg-pink-100 shadow-[4px_4px_0_0_#111827]">
+                    <p class="text-pink-800 font-black text-xl">ความแม่นยำ</p>
+                    <p class="text-5xl font-black text-pink-600" id="res-accuracy">0%</p>
+                </div>
+                <div class="col-span-2 border-4 border-gray-800 p-8 rounded-3xl bg-yellow-300 shadow-[6px_6px_0_0_#111827] transform scale-105">
+                    <p class="text-gray-900 font-black text-2xl mb-2">คะแนนรวมทั้งหมด</p>
+                    <p class="text-8xl font-black text-outline-white text-orange-500" id="res-score">0</p>
+                    <p class="text-gray-800 mt-3 font-bold text-lg bg-white inline-block px-4 py-1 rounded-full border-2 border-black" id="res-bonus">รวมโบนัสความเร็วแล้ว!</p>
+                </div>
+            </div>
+            
+            <button onclick="backToMenu()" class="btn-game btn-mixed text-white text-3xl font-black py-5 px-12 rounded-full text-outline-white">
+                🏠 เล่นใหม่อีกครั้ง
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Configuration & State ---
+        const CONFIG = {
+            totalQuestions: 10,
+            timePerQuestion: 15,
+            baseScore: 100,
+            hoverFramesRequired: 30 // ลดลงจาก 40 เหลือ 30 (~1 วินาที) เพื่อให้ตอบสนองทันใจเด็กๆ
+        };
+
+        let state = {
+            mode: 'add',
+            status: 'menu', // menu, loading, playing, result
+            questionCount: 0,
+            score: 0,
+            correctAnswers: 0,
+            timeLeft: 0,
+            currentQuestion: null,
+            lastFrameTime: Date.now()
+        };
+
+        // --- Interaction State ---
+        let hover = {
+            target: null, // 'left' or 'right'
+            progress: 0,
+            isActive: false
+        };
+
+        // เพิ่มตัวแปรสำหรับความสมูทของเคอร์เซอร์ (Smooth Cursor Physics)
+        let smoothCursor = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+            targetX: window.innerWidth / 2,
+            targetY: window.innerHeight / 2,
+            speed: 0.35 // ความหน่วงในการตามนิ้ว (ค่ายิ่งน้อยยิ่งสมูทแต่จะตามช้า 0.1 - 0.5 กำลังดี)
+        };
+
+        let feedbackActive = false; // ป้องกันการตอบซ้ำขณะแสดงเอฟเฟกต์ถูก/ผิด
+
+        // --- STREAMING_CHUNK:Audio System Setup... ---
+        const audioManager = {
+            initialized: false,
+            bgmSynth: null,
+            sfxSynth: null,
+            tickSynth: null,
+            bgmLoop: null,
+            warningLoop: null,
+
+            async init() {
+                if (this.initialized) return;
+                await Tone.start();
+                
+                // เครื่องดนตรีหลักสำหรับเพลงพื้นหลัง
+                this.bgmSynth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "triangle" },
+                    envelope: { attack: 0.1, decay: 0.2, sustain: 0.2, release: 0.5 }
+                }).toDestination();
+                this.bgmSynth.volume.value = -18;
+
+                // เครื่องดนตรีสำหรับเอฟเฟกต์ตอบถูก/ผิด
+                this.sfxSynth = new Tone.PolySynth(Tone.Synth).toDestination();
+                this.sfxSynth.volume.value = -8;
+
+                // เครื่องดนตรีสำหรับเสียงเตือนติ๊กๆ
+                this.tickSynth = new Tone.MembraneSynth().toDestination();
+                this.tickSynth.volume.value = -15;
+
+                // สร้างโน้ตเพลงวนลูป
+                const notes = ["C4", "E4", "G4", "A4", "G4", "E4"];
+                let step = 0;
+                this.bgmLoop = new Tone.Loop((time) => {
+                    this.bgmSynth.triggerAttackRelease(notes[step % notes.length], "8n", time);
+                    step++;
+                }, "4n");
+
+                // เสียงเตือนเวลาจะหมด
+                this.warningLoop = new Tone.Loop((time) => {
+                    this.tickSynth.triggerAttackRelease("C5", "32n", time);
+                }, "4n");
+
+                Tone.Transport.start();
+                Tone.Transport.bpm.value = 130;
+                this.initialized = true;
+            },
+
+            playBGM() {
+                if (!this.initialized) return;
+                Tone.Transport.bpm.value = 130;
+                this.bgmLoop.start(0);
+                this.warningLoop.stop();
+            },
+
+            stopBGM() {
+                if (!this.initialized) return;
+                this.bgmLoop.stop();
+                this.warningLoop.stop();
+            },
+
+            playHover() {
+                if (this.initialized) this.tickSynth.triggerAttackRelease("G2", "32n");
+            },
+
+            playCorrect() {
+                if (!this.initialized) return;
+                const now = Tone.now();
+                this.sfxSynth.triggerAttackRelease(["C5", "E5", "G5"], "8n", now);
+                this.sfxSynth.triggerAttackRelease("C6", "4n", now + 0.15);
+            },
+
+            playWrong() {
+                if (!this.initialized) return;
+                const now = Tone.now();
+                this.sfxSynth.triggerAttackRelease(["C4", "Eb4", "Gb4"], "8n", now);
+                this.sfxSynth.triggerAttackRelease("A3", "2n", now + 0.15);
+            },
+
+            playGameOver(isPerfect) {
+                if (!this.initialized) return;
+                this.stopBGM();
+                const now = Tone.now();
+                if (isPerfect) {
+                    this.sfxSynth.triggerAttackRelease(["C4", "E4", "G4", "C5"], "2n", now);
+                    this.sfxSynth.triggerAttackRelease(["E4", "G4", "C5", "E5"], "1n", now + 0.5);
+                } else {
+                    this.sfxSynth.triggerAttackRelease(["C4", "E4", "G4"], "2n", now);
+                }
+            },
+            
+            startWarning() {
+                if (this.initialized && this.warningLoop.state !== "started") {
+                    this.warningLoop.start();
+                    Tone.Transport.bpm.value = 160; // เร่งจังหวะเพลงให้ตื่นเต้น
+                }
+            },
+            
+            stopWarning() {
+                 if (this.initialized) {
+                     this.warningLoop.stop();
+                     Tone.Transport.bpm.value = 130; // กลับความเร็วปกติ
+                 }
+            }
+        };
+
+        // --- DOM Elements ---
+        const screens = {
+            menu: document.getElementById('screen-menu'),
+            loading: document.getElementById('screen-loading'),
+            error: document.getElementById('screen-error'),
+            game: document.getElementById('screen-game'),
+            result: document.getElementById('screen-result')
+        };
+
+        const ui = {
+            question: document.getElementById('ui-question'),
+            ansLeft: document.getElementById('ui-ans-left'),
+            ansRight: document.getElementById('ui-ans-right'),
+            boxLeft: document.getElementById('ans-left'),
+            boxRight: document.getElementById('ans-right'),
+            score: document.getElementById('ui-score'),
+            qcount: document.getElementById('ui-qcount'),
+            timer: document.getElementById('ui-timer'),
+            timerBox: document.getElementById('ui-timer-box'),
+            feedback: document.getElementById('ui-feedback'),
+            feedbackIcon: document.getElementById('ui-feedback-icon')
+        };
+
+        // --- Canvas setup ---
+        const videoElement = document.getElementById('input-video');
+        const videoCanvas = document.getElementById('video-canvas');
+        const videoCtx = videoCanvas.getContext('2d');
+        
+        const cursorCanvas = document.getElementById('cursor-layer');
+        const cursorCtx = cursorCanvas.getContext('2d');
+
+        let camera = null;
+        let hands = null;
+        let cw, ch;
+
+        // Resize handler
+        function resize() {
+            cw = window.innerWidth;
+            ch = window.innerHeight;
+            videoCanvas.width = cw;
+            videoCanvas.height = ch;
+            cursorCanvas.width = cw;
+            cursorCanvas.height = ch;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- STREAMING_CHUNK:Core Game Logic and Questions... ---
+        
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+        }
+
+        function generateQuestion(mode) {
+            let num1, num2, answer, wrongAnswer, operatorStr;
+            let actualMode = mode === 'mixed' 
+                ? ['add', 'sub', 'mul', 'div'][Math.floor(Math.random() * 4)] 
+                : mode;
+            
+            switch (actualMode) {
+                case 'add':
+                    num1 = Math.floor(Math.random() * 50) + 1; 
+                    num2 = Math.floor(Math.random() * 50) + 1; 
+                    answer = num1 + num2;
+                    operatorStr = '+';
+                    break;
+                case 'sub':
+                    num1 = Math.floor(Math.random() * 50) + 20; 
+                    num2 = Math.floor(Math.random() * num1) + 1; 
+                    answer = num1 - num2;
+                    operatorStr = '-';
+                    break;
+                case 'mul':
+                    num1 = Math.floor(Math.random() * 11) + 2; // 2-12
+                    num2 = Math.floor(Math.random() * 11) + 2; 
+                    answer = num1 * num2;
+                    operatorStr = '×';
+                    break;
+                case 'div':
+                    num2 = Math.floor(Math.random() * 11) + 2; 
+                    answer = Math.floor(Math.random() * 11) + 2; 
+                    num1 = num2 * answer; 
+                    operatorStr = '÷';
+                    break;
+            }
+            
+            // Create a tricky wrong answer
+            let offset = Math.floor(Math.random() * 3) + 1;
+            wrongAnswer = answer + (Math.random() > 0.5 ? offset : -offset);
+            if (wrongAnswer < 0) wrongAnswer = answer + offset;
+            if (wrongAnswer === answer) wrongAnswer += 1;
+            
+            const isLeftCorrect = Math.random() > 0.5;
+            
+            return {
+                text: `${num1} ${operatorStr} ${num2}`,
+                correctSide: isLeftCorrect ? 'left' : 'right',
+                leftVal: isLeftCorrect ? answer : wrongAnswer,
+                rightVal: !isLeftCorrect ? answer : wrongAnswer
+            };
+        }
+
+        function nextQuestion() {
+            state.questionCount++;
+            
+            if (state.questionCount > CONFIG.totalQuestions) {
+                endGame();
+                return;
+            }
+            
+            state.currentQuestion = generateQuestion(state.mode);
+            state.timeLeft = CONFIG.timePerQuestion;
+            
+            // Update UI
+            ui.question.innerText = state.currentQuestion.text + " = ?";
+            ui.ansLeft.innerText = state.currentQuestion.leftVal;
+            ui.ansRight.innerText = state.currentQuestion.rightVal;
+            ui.qcount.innerText = `${state.questionCount}/${CONFIG.totalQuestions}`;
+            ui.score.innerText = state.score;
+            
+            // Reset state
+            ui.timerBox.classList.replace('border-red-500', 'border-blue-400');
+            hover.target = null;
+            hover.progress = 0;
+            state.lastFrameTime = Date.now();
+            
+            audioManager.stopWarning(); // หยุดเสียงเตือนเวลา
+        }
+
+        function handleAnswer(selectedSide) {
+            if (feedbackActive) return;
+            feedbackActive = true;
+            
+            const isCorrect = (selectedSide === state.currentQuestion.correctSide);
+            
+            if (isCorrect) {
+                state.correctAnswers++;
+                // Score = Base + Speed Bonus
+                const speedBonus = Math.floor(state.timeLeft) * 10;
+                state.score += CONFIG.baseScore + speedBonus;
+                ui.score.innerText = state.score;
+                
+                audioManager.playCorrect(); // เสียงตอนตอบถูก
+                showFeedback(true);
+            } else {
+                audioManager.playWrong(); // เสียงตอนตอบผิด
+                showFeedback(false);
+            }
+            
+            // Wait for animation then next question
+            setTimeout(() => {
+                feedbackActive = false;
+                ui.feedback.style.opacity = '0';
+                ui.feedbackIcon.style.transform = 'scale(0.5)';
+                nextQuestion();
+            }, 1500);
+        }
+
+        function showFeedback(isCorrect) {
+            ui.feedback.style.opacity = '1';
+            ui.feedback.style.backgroundColor = isCorrect ? 'rgba(74, 222, 128, 0.4)' : 'rgba(248, 113, 113, 0.4)';
+            
+            ui.feedbackIcon.innerText = isCorrect ? '✅' : '❌';
+            ui.feedbackIcon.style.transform = 'scale(1)';
+            
+            // Add pop effect to the correct box
+            if (isCorrect) {
+                const correctBox = state.currentQuestion.correctSide === 'left' ? ui.boxLeft : ui.boxRight;
+                correctBox.classList.add('hovering');
+                setTimeout(() => correctBox.classList.remove('hovering'), 1000);
+            }
+        }
+
+        function gameLoop() {
+            if (state.status !== 'playing') return;
+            
+            // Time logic
+            const now = Date.now();
+            const delta = (now - state.lastFrameTime) / 1000;
+            state.lastFrameTime = now;
+            
+            if (!feedbackActive) {
+                state.timeLeft -= delta;
+                
+                if (state.timeLeft <= 5) {
+                    ui.timerBox.classList.replace('border-blue-400', 'border-red-500');
+                    ui.timer.classList.add('text-red-300');
+                    audioManager.startWarning(); // เริ่มเสียงเตือนและเร่งเพลง
+                } else {
+                    ui.timer.classList.remove('text-red-300');
+                    audioManager.stopWarning();
+                }
+                
+                if (state.timeLeft <= 0) {
+                    state.timeLeft = 0;
+                    handleAnswer(null); // Time out = wrong
+                }
+                
+                ui.timer.innerText = Math.ceil(state.timeLeft);
+            }
+            
+            // Request next frame for timer
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- STREAMING_CHUNK:MediaPipe Hand Tracking Setup... ---
+        
+        async function initAI() {
+            try {
+                hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+                
+                hands.setOptions({
+                    maxNumHands: 1, // จับแค่มือเดียวพอ เพื่อลดภาระเครื่องและเพิ่มความเร็ว
+                    modelComplexity: 0, // เปลี่ยนเป็นโมเดล 0 (Lite) เพื่อให้ทำงานไวที่สุด
+                    minDetectionConfidence: 0.5, // ลดเกณฑ์ลงให้จับมือติดง่ายขึ้น
+                    minTrackingConfidence: 0.5
+                });
+                
+                hands.onResults(onMediaPipeResults);
+                
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        if (state.status === 'playing') {
+                            await hands.send({image: videoElement});
+                        }
+                    },
+                    width: 640, // ลดความละเอียดส่งให้ AI (เบาเครื่องมาก) แต่ภาพบนจอยังคมชัด
+                    height: 480
+                });
+                
+                await camera.start();
+                return true;
+            } catch (error) {
+                console.error("AI Init Error:", error);
+                return false;
+            }
+        }
+
+        async function startGame(mode) {
+            // Initialize Audio Engine first (must be triggered by user click)
+            await audioManager.init();
+            
+            state.mode = mode;
+            switchScreen('loading');
+            
+            if (!camera) {
+                const success = await initAI();
+                if (!success) {
+                    switchScreen('error');
+                    return;
+                }
+            }
+            
+            // Give a short delay to ensure UI transition is smooth
+            setTimeout(() => {
+                state.status = 'playing';
+                state.questionCount = 0;
+                state.score = 0;
+                state.correctAnswers = 0;
+                
+                switchScreen('game');
+                resize();
+                
+                audioManager.playBGM(); // เริ่มเล่นดนตรี
+                
+                nextQuestion();
+                gameLoop();
+            }, 1000);
+        }
+
+        // --- STREAMING_CHUNK:Rendering and Collision Detection... ---
+
+        function onMediaPipeResults(results) {
+            if (state.status !== 'playing') return;
+
+            // 1. Draw mirrored video to background canvas
+            videoCtx.save();
+            videoCtx.clearRect(0, 0, cw, ch);
+            videoCtx.translate(cw, 0);
+            videoCtx.scale(-1, 1);
+            videoCtx.drawImage(results.image, 0, 0, cw, ch);
+            videoCtx.restore();
+
+            // Clear cursor layer
+            cursorCtx.clearRect(0, 0, cw, ch);
+            
+            if (feedbackActive) return; // Stop interactions during feedback
+
+            // 2. Process Hand Tracking (No skeleton, just logic & cursor)
+            let isPointing = false;
+            let currentTarget = null;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // Use the first detected hand's index finger (Landmark 8)
+                const indexFinger = results.multiHandLandmarks[0][8];
+                
+                // Set target coordinates (X is flipped because video is mirrored)
+                smoothCursor.targetX = (1 - indexFinger.x) * cw;
+                smoothCursor.targetY = indexFinger.y * ch;
+                isPointing = true;
+            } 
+            
+            // --- ระบบ LERP (Linear Interpolation) ทำให้จุดเล็งวิ่งตามนิ้วแบบสมูท ไม่กระตุก ---
+            if (isPointing) {
+                smoothCursor.x += (smoothCursor.targetX - smoothCursor.x) * smoothCursor.speed;
+                smoothCursor.y += (smoothCursor.targetY - smoothCursor.y) * smoothCursor.speed;
+            }
+
+            // 3. Collision Detection with HTML DOM Elements
+            const rectLeft = ui.boxLeft.getBoundingClientRect();
+            const rectRight = ui.boxRight.getBoundingClientRect();
+
+            // Check collision (ขยายพื้นที่ Margin ให้กว้างขึ้นจาก 20 เป็น 60 เด็กๆ จะได้เลือกโดนง่ายๆ)
+            const margin = 60; 
+            
+            if (smoothCursor.x > rectLeft.left - margin && smoothCursor.x < rectLeft.right + margin &&
+                smoothCursor.y > rectLeft.top - margin && smoothCursor.y < rectLeft.bottom + margin) {
+                currentTarget = 'left';
+            } else if (smoothCursor.x > rectRight.left - margin && smoothCursor.x < rectRight.right + margin &&
+                       smoothCursor.y > rectRight.top - margin && smoothCursor.y < rectRight.bottom + margin) {
+                currentTarget = 'right';
+            }
+            
+            // วาดจุดเคอร์เซอร์เวทมนตร์ตามพิกัดที่สมูทแล้ว
+            if (isPointing || hover.progress > 0) {
+                drawMagicCursor(smoothCursor.x, smoothCursor.y, currentTarget !== null);
+            }
+
+            // 5. Update Hover Progress Logic
+            if (isPointing && currentTarget) {
+                if (hover.target !== currentTarget) {
+                    // Changed target
+                    hover.target = currentTarget;
+                    hover.progress = 0;
+                }
+                
+                hover.progress++;
+                
+                // Visual feedback on HTML element
+                if (currentTarget === 'left') ui.boxLeft.classList.add('hovering');
+                if (currentTarget === 'right') ui.boxRight.classList.add('hovering');
+                
+                // Play ticking sound while charging (every 6 frames now)
+                if (hover.progress % 6 === 0) {
+                    audioManager.playHover();
+                }
+                
+                // Draw loading ring on cursor layer around the pointer
+                drawLoadingRing(smoothCursor.x, smoothCursor.y, hover.progress / CONFIG.hoverFramesRequired);
+
+                // Confirm Selection
+                if (hover.progress >= CONFIG.hoverFramesRequired) {
+                    handleAnswer(hover.target);
+                    resetHover();
+                }
+            } else {
+                // Not pointing at targets (ค่อยๆ ลดแถบโหลดลง แทนที่จะรีเซ็ตทันที)
+                resetHover();
+            }
+        }
+
+        function resetHover() {
+            ui.boxLeft.classList.remove('hovering');
+            ui.boxRight.classList.remove('hovering');
+            if (hover.progress > 0) {
+                hover.progress = Math.max(0, hover.progress - 2); // Smooth decrease
+            } else {
+                hover.target = null;
+            }
+        }
+
+        // --- STREAMING_CHUNK:Drawing Custom Cursor... ---
+        function drawMagicCursor(x, y, isTargeting) {
+            // Draw a cute crosshair pointer (Game Style)
+            
+            // Outer Ring
+            cursorCtx.beginPath();
+            cursorCtx.arc(x, y, 20, 0, Math.PI * 2);
+            cursorCtx.lineWidth = 4;
+            cursorCtx.strokeStyle = isTargeting ? '#111827' : '#ffffff';
+            cursorCtx.setLineDash([8, 6]);
+            cursorCtx.stroke();
+            cursorCtx.setLineDash([]); // Reset
+            
+            // Inner Dot
+            cursorCtx.beginPath();
+            cursorCtx.arc(x, y, 6, 0, Math.PI * 2);
+            cursorCtx.fillStyle = isTargeting ? '#ff3b30' : '#ffffff'; // Red if targeting
+            cursorCtx.fill();
+            cursorCtx.lineWidth = 3;
+            cursorCtx.strokeStyle = '#111827'; // Dark thick border
+            cursorCtx.stroke();
+        }
+
+        function drawLoadingRing(x, y, percentage) {
+            cursorCtx.beginPath();
+            cursorCtx.arc(x, y, 40, -Math.PI / 2, (-Math.PI / 2) + (Math.PI * 2 * percentage));
+            cursorCtx.strokeStyle = '#111827'; // Dark outline for the loading ring
+            cursorCtx.lineWidth = 14;
+            cursorCtx.lineCap = 'round';
+            cursorCtx.stroke();
+            
+            cursorCtx.beginPath();
+            cursorCtx.arc(x, y, 40, -Math.PI / 2, (-Math.PI / 2) + (Math.PI * 2 * percentage));
+            cursorCtx.strokeStyle = '#fde047'; // Chunky Yellow inner fill
+            cursorCtx.lineWidth = 8;
+            cursorCtx.lineCap = 'round';
+            cursorCtx.stroke();
+        }
+
+        // --- STREAMING_CHUNK:Result Screen and Utilities... ---
+
+        function endGame() {
+            state.status = 'result';
+            
+            let isPerfect = false;
+            // Calculate perfect bonus
+            if (state.correctAnswers === CONFIG.totalQuestions) {
+                state.score += 500;
+                document.getElementById('res-bonus').innerText = "Perfect Bonus +500! 🌟";
+                isPerfect = true;
+            } else {
+                document.getElementById('res-bonus').innerText = "รวมคะแนนโบนัสความเร็วแล้ว";
+            }
+
+            document.getElementById('res-correct').innerText = state.correctAnswers;
+            document.getElementById('res-accuracy').innerText = Math.round((state.correctAnswers / CONFIG.totalQuestions) * 100) + "%";
+            
+            audioManager.playGameOver(isPerfect); // เสียงจบเกม
+            
+            switchScreen('result');
+            animateScoreCounting(state.score);
+            fireConfetti();
+        }
+
+        function backToMenu() {
+            document.getElementById('confetti-container').innerHTML = '';
+            audioManager.stopBGM(); // หยุดเสียงทั้งหมด
+            switchScreen('menu');
+        }
+
+        function animateScoreCounting(targetScore) {
+            let current = 0;
+            const el = document.getElementById('res-score');
+            const step = Math.max(1, Math.floor(targetScore / 40));
+            
+            const timer = setInterval(() => {
+                current += step;
+                if (current >= targetScore) {
+                    current = targetScore;
+                    clearInterval(timer);
+                }
+                el.innerText = current;
+            }, 30);
+        }
+
+        function fireConfetti() {
+            const container = document.getElementById('confetti-container');
+            container.innerHTML = '';
+            const colors = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa'];
+            
+            for (let i = 0; i < 80; i++) {
+                const conf = document.createElement('div');
+                conf.className = 'confetti-piece';
+                conf.style.left = Math.random() * 100 + 'vw';
+                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                
+                const duration = Math.random() * 3 + 2; 
+                const delay = Math.random() * 0.5;
+                
+                conf.style.animation = `fall ${duration}s linear ${delay}s forwards`;
+                container.appendChild(conf);
+            }
+        }
+
+    </script>
+</body>
+</html>
