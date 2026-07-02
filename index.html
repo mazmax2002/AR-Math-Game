@@ -752,8 +752,8 @@
             const rectLeft = ui.boxLeft.getBoundingClientRect();
             const rectRight = ui.boxRight.getBoundingClientRect();
 
-            // Check collision (ขยายพื้นที่ Margin ให้กว้างขึ้นจาก 20 เป็น 60 เด็กๆ จะได้เลือกโดนง่ายๆ)
-            const margin = 60; 
+            // Check collision (ปรับ Margin อัตโนมัติตามขนาดจอ ถ้าจอมือถือจะลด margin ลงเพื่อไม่ให้ทับกัน)
+            const margin = window.innerWidth < 600 ? 30 : 60; 
             
             if (smoothCursor.x > rectLeft.left - margin && smoothCursor.x < rectLeft.right + margin &&
                 smoothCursor.y > rectLeft.top - margin && smoothCursor.y < rectLeft.bottom + margin) {
